@@ -18,7 +18,7 @@ func HashPassword(plaintext string) (string, error) {
 		return "", err
 	}
 
-	return string(hash), err
+	return string(hash), nil
 }
 
 // CheckPassword securely compares a plaintext password against a stored bcrypt hash.

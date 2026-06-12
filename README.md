@@ -1,1 +1,1 @@
-# Enterprise-Identity-Provider-IdP-
+# Enterprise-Identity-Provider-IdP
