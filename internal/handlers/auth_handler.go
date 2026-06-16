@@ -6,6 +6,7 @@ import (
 	"Identity_Provider/internal/repository"
 	"encoding/json"
 	"net/http"
+	"time"
 )
 
 // AuthHandler holds the dependencies our HTTP routes need.
@@ -95,5 +96,68 @@ func (h *AuthHandler) Register (w http.ResponseWriter, r *http.Request) {
 	// 7. Send the 201 Created HTTP status and the JSON response
 	w.Header().Set("Content-Type", "application.json")
 	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(res)
+}
+
+// ---------------------------------------------------------
+// LOGIN DATA TRANSFER OBJECTS (DTOs)
+// ---------------------------------------------------------
+
+type LoginRequest struct {
+	Email 	 string `json:"email"`
+	Password string	`json:"password"`
+}
+
+type LoginResponse struct {
+	AccessToken string `json:"access_token"`
+}
+
+// ---------------------------------------------------------
+// Login handles POST /api/login
+// ---------------------------------------------------------
+func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
+	// 1. Enforce HTTP Method
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// 2. Parse the Request
+	var req LoginRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid JSON payload", http.StatusBadRequest)
+		return
+	}
+
+	// 3. Fetch the User from PostgreSQL via the Interface
+	user, err := h.repo.GetUserByEmail(r.Context(), req.Email)
+	if err != nil {
+		http.Error(w, "Invalid email or password", http.StatusUnauthorized)
+		return
+	}
+
+	// 4. Verify the Password using our Phase 1 Crypto Engine
+	err = auth.CheckPassword(req.Password, user.PasswordHash)
+	if err != nil {
+		http.Error(w, "Invalid email or password", http.StatusUnauthorized)
+		return
+	}
+
+	// 5. Mint the Access Token (15-minute lifespan is the enterprise standard)
+	// We inject the user.ID and user.Role straight into the JWT payload.
+	tokenString, err := h.tokenManager.GenerateAccessToken(user.ID.String(), user.Role, 15*time.Minute)
+	if err != nil {
+		http.Error(w, "Failed to generate token", http.StatusInternalServerError)
+		return
+	}
+
+	// 6. Construct the Response
+	res := LoginResponse{
+		AccessToken: tokenString,
+	}
+
+	// 7. Send the 200 OK and the Token
+	w.Header().Set("Content-Type", "application.json")
+	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(res)
 }
