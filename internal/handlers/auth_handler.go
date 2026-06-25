@@ -1,12 +1,13 @@
 package handlers
 
 import (
-	"Identity_Provider/internal/auth"
-	"Identity_Provider/internal/models"
-	"Identity_Provider/internal/repository"
 	"encoding/json"
 	"net/http"
 	"time"
+
+	"Identity_Provider/internal/auth"
+	"Identity_Provider/internal/models"
+	"Identity_Provider/internal/repository"
 )
 
 // AuthHandler holds the dependencies our HTTP routes need.

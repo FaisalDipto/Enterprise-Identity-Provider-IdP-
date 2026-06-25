@@ -12,3 +12,11 @@ type UserRepository interface {
 	GetUserByEmail(ctx context.Context, email string) (*models.User, error)
 	IncrementTokenVersion(ctx context.Context, userID string) error
 }
+
+// RefreshTokenRepository defines the strict contract for session management.
+type RefreshTokenRepository interface {
+	CreateToken(ctx context.Context, token *models.RefreshToken) error
+	GetTokenByHash(ctx context.Context, tokenHash string) (*models.RefreshToken, error)
+	DeleteToken(ctx context.Context, tokenHash string) error
+	DeleteAllTokensForUser(ctx context.Context, userID string) error
+}

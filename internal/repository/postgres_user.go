@@ -12,6 +12,7 @@ type PostgresUserRepository struct {
 	db *sql.DB
 }
 
+// NewPostgresUserRepository is the constructor. It returns our struct,
 // but it is typed to satisfy the UserRepository interface.
 func NewPostgresUserRepository(db *sql.DB) UserRepository {
 	return &PostgresUserRepository{db :db}
