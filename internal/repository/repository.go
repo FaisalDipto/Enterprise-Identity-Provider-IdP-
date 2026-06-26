@@ -1,8 +1,8 @@
 package repository
 
 import (
-	"context"
 	"Identity_Provider/internal/models"
+	"context"
 )
 
 // UserRepository defines the strict contract any database must follow.
@@ -10,6 +10,7 @@ import (
 type UserRepository interface {
 	CreateUser(ctx context.Context, user *models.User) error
 	GetUserByEmail(ctx context.Context, email string) (*models.User, error)
+	GetUserByID(ctx context.Context, id string) (*models.User, error)
 	IncrementTokenVersion(ctx context.Context, userID string) error
 }
 

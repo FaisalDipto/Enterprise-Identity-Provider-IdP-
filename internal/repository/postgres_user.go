@@ -59,6 +59,32 @@ func (r *PostgresUserRepository) GetUserByEmail(ctx context.Context, email strin
 	return &user, nil
 }
 
+// GetUserByID fetches the user's fresh data
+func (r *PostgresUserRepository) GetUserByID(ctx context.Context, userID string) (*models.User, error) {
+	query := `SELECT id, email, password_hash, role, token_version, created_at, updated_at FROM users WHERE id = $1`
+
+	var user models.User
+
+	err := r.db.QueryRowContext(ctx, query, userID).Scan(
+		&user.ID,
+		&user.Email,
+		&user.PasswordHash,
+		&user.Role,
+		&user.TokenVersion,
+		&user.CreatedAt,
+		&user.UpdatedAt,
+	)
+
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, errors.New("user not found")
+		}
+		return nil, err
+	}
+
+	return &user, nil
+}
+
 // IncrementTokenVersion acts as the "Kill Switch"
 func (r *PostgresUserRepository) IncrementTokenVersion(ctx context.Context, userID string) error {
 	query := `UPDATE users SET token_version = token_version + 1 WHERE id = $1`

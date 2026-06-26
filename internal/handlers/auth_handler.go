@@ -13,7 +13,7 @@ import (
 // AuthHandler holds the dependencies our HTTP routes need.
 type AuthHandler struct {
 	repo repository.UserRepository
-	refrestTokenRepo repository.RefreshTokenRepository
+	refreshTokenRepo repository.RefreshTokenRepository
 	tokenManager *auth.TokenManager
 }
 
@@ -21,7 +21,7 @@ type AuthHandler struct {
 func NewAuthHandler(repo repository.UserRepository, rtr repository.RefreshTokenRepository,tm *auth.TokenManager) *AuthHandler {
 	return &AuthHandler{
 		repo: repo,
-		refrestTokenRepo: rtr,
+		refreshTokenRepo: rtr,
 		tokenManager: tm,
 	}
 }
@@ -173,7 +173,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		ExpiresAt: expiresAt,
 	}
 
-	err = h.refrestTokenRepo.CreateToken(r.Context(), newSession)
+	err = h.refreshTokenRepo.CreateToken(r.Context(), newSession)
 	if err != nil {
 		http.Error(w, "Failed to create session", http.StatusInternalServerError)
 		return
@@ -200,3 +200,102 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(res)
 }
+
+	// =====================================
+	// Refresh handles POST /api/refresh
+	// =====================================
+
+	func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
+		// 1. Enforce HTTP Method
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		// 2. Extract the raw token from the HttpOnly Cookie
+		cookie, err := r.Cookie("refresh_token")
+		if err != nil {
+			http.Error(w, "Missing session token", http.StatusUnauthorized)
+			return
+		}
+		rawToken := cookie.Value
+
+		// 3. Hash the raw token to interact with the Database
+		tokenHash := auth.HashToken(rawToken)
+
+		// 4. Verify the token exists in the database
+		storedToken, err := h.refreshTokenRepo.GetTokenByHash(r.Context(), tokenHash)
+		if err != nil {
+			// TRIPWIRE: If the token isn't in the database, it means it was either
+			// never minted, or it was already burned by a previous request.
+			http.Error(w, "Invalid or hijacked session", http.StatusUnauthorized)
+			return
+		}
+
+		// 5. Check if the token expired naturally (7 days passed)
+		if time.Now().After(storedToken.ExpiresAt) {
+			// Clean up the dead token from the DB and reject the user
+			h.refreshTokenRepo.DeleteToken(r.Context(), tokenHash)
+			http.Error(w, "Session expired, please log in again", http.StatusUnauthorized)
+			return
+		}
+
+		// 6. THE BURN: Refresh Token Rotation
+		// We delete the old token immediately so it can never be used again.
+		err = h.refreshTokenRepo.DeleteToken(r.Context(), tokenHash)
+		if err != nil {
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+
+		// 7. Fetch the fresh User data (to get their current role)
+		// (Assumin GetUserByID was added to our UserRepository interface)
+		user, err := h.repo.GetUserByID(r.Context(), storedToken.UserID.String())
+		if err != nil {
+			http.Error(w, "User no longer exists", http.StatusUnauthorized)
+			return
+		}
+
+		// 8. Mint the new 15-Minute Access Token
+		newAccessToken, err := h.tokenManager.GenerateAccessToken(user.ID.String(), user.Role, 15*time.Minute)
+		if err != nil {
+			http.Error(w, "Failed to generate token", http.StatusInternalServerError)
+			return
+		}
+
+		// 9. Mint the new 7-Day Refresh Token Pair
+		newRawToken, newDbHash, err := auth.GenerateRefreshToken()
+		if err != nil {
+			http.Error(w, "Failed to generate session", http.StatusInternalServerError)
+			return
+		}
+
+		// 10. Store the new Hash in PostgreSQL
+		expiresAt := time.Now().Add(7 * 24 * time.Hour)
+		newSession := &models.RefreshToken{
+			UserID: user.ID,
+			TokenHash: newDbHash,
+			ExpiresAt: expiresAt,
+		}
+		h.refreshTokenRepo.CreateToken(r.Context(), newSession)
+
+		// 11. Overwrite the old cookie with the new one
+		http.SetCookie(w, &http.Cookie{
+			Name: "refresh_token",
+			Value: newRawToken,
+			Expires: expiresAt,
+			HttpOnly: true,
+			Secure: true,
+			SameSite: http.SameSiteStrictMode,
+			Path: "/api/refresh",
+		})
+
+		// 12. Send the new Access Token in the JSON body
+		res := LoginResponse{
+			AccessToken: newAccessToken,
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(res)
+	}
