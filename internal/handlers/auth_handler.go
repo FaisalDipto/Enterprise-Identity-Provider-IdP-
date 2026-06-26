@@ -13,13 +13,15 @@ import (
 // AuthHandler holds the dependencies our HTTP routes need.
 type AuthHandler struct {
 	repo repository.UserRepository
+	refrestTokenRepo repository.RefreshTokenRepository
 	tokenManager *auth.TokenManager
 }
 
 // NewAuthHandler is the constructor. Notice it asks for the Interface, not Postgres!
-func NewAuthHandler(repo repository.UserRepository, tm *auth.TokenManager) *AuthHandler {
+func NewAuthHandler(repo repository.UserRepository, rtr repository.RefreshTokenRepository,tm *auth.TokenManager) *AuthHandler {
 	return &AuthHandler{
 		repo: repo,
+		refrestTokenRepo: rtr,
 		tokenManager: tm,
 	}
 }
@@ -152,12 +154,48 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 6. Construct the Response
+	// ================================
+	// NEW: DUAL_TOKEN LOGIC
+	// ================================
+
+	// 6. Generate the Refresh Token Pair
+	rawToken, dbHash, err := auth.GenerateRefreshToken()
+	if err != nil {
+		http.Error(w, "Failed to generate session", http.StatusInternalServerError)
+		return
+	}
+
+	// 7. Store the Hash in PostgreSQL (Expires in 7 days)
+	expiresAt := time.Now().Add(7 * 24 * time.Hour)
+	newSession := &models.RefreshToken{
+		UserID: user.ID,
+		TokenHash: dbHash,
+		ExpiresAt: expiresAt,
+	}
+
+	err = h.refrestTokenRepo.CreateToken(r.Context(), newSession)
+	if err != nil {
+		http.Error(w, "Failed to create session", http.StatusInternalServerError)
+		return
+	}
+
+	// 8. Construct the HttpOnly Cookie for the Raw Token
+	http.SetCookie(w, &http.Cookie{
+		Name: "refresh_token",
+		Value: rawToken,
+		Expires: expiresAt,
+		HttpOnly: true,
+		Secure: true,
+		SameSite: http.SameSiteStrictMode,
+		Path: "/api/refresh",
+	})
+
+	// 9. Send Response (Only the Access Token goes in the JSON)
 	res := LoginResponse{
 		AccessToken: tokenString,
 	}
 
-	// 7. Send the 200 OK and the Token
+	// 10. Send the 200 OK and the Token
 	w.Header().Set("Content-Type", "application.json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(res)
