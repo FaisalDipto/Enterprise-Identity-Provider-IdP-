@@ -2,7 +2,10 @@ package auth
 
 import (
 	"crypto/rsa"
+	"crypto/x509"
+	"encoding/pem"
 	"errors"
+	"os"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -30,6 +33,75 @@ func NewTokenManager(privKey *rsa.PrivateKey, pubKey *rsa.PublicKey, issuer stri
 		privateKey: privKey,
 		issuer: issuer, 
 	}
+}
+
+// LoadRSAKeys reads the private and public keys from the filesystem.
+func LoadRSAKeys(privateKeyPath, publicKeyPath string) (*rsa.PrivateKey, *rsa.PublicKey, error) {
+	
+	// ---------------------------------------------------------
+	// 1. Read and parse the Private Key
+	// ---------------------------------------------------------
+	privBytes, err := os.ReadFile(privateKeyPath)
+	if err != nil {
+		return nil, nil, err
+	}
+	
+	privBlock, _ := pem.Decode(privBytes)
+	if privBlock == nil {
+		return nil, nil, errors.New("failed to find any PEM block in private key file")
+	}
+
+	var privateKey *rsa.PrivateKey
+
+	// The Upgraded Format Check
+	if privBlock.Type == "RSA PRIVATE KEY" {
+		// Legacy PKCS#1 Format
+		privateKey, err = x509.ParsePKCS1PrivateKey(privBlock.Bytes)
+		if err != nil {
+			return nil, nil, err
+		}
+	} else if privBlock.Type == "PRIVATE KEY" {
+		// Modern PKCS#8 Format (OpenSSL 3+)
+		keyInterface, err := x509.ParsePKCS8PrivateKey(privBlock.Bytes)
+		if err != nil {
+			return nil, nil, err
+		}
+		// Type assert the generic interface back into an RSA Private Key
+		var ok bool
+		privateKey, ok = keyInterface.(*rsa.PrivateKey)
+		if !ok {
+			return nil, nil, errors.New("not an RSA private key inside PKCS#8 block")
+		}
+	} else {
+		// If a hacker tries to pass an ECDSA or Ed25519 key, we lock them out
+		return nil, nil, errors.New("unsupported private key type: " + privBlock.Type)
+	}
+
+
+	// ---------------------------------------------------------
+	// 2. Read and parse the Public Key
+	// ---------------------------------------------------------
+	pubBytes, err := os.ReadFile(publicKeyPath)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	pubBlock, _ := pem.Decode(pubBytes)
+	if pubBlock == nil || pubBlock.Type != "PUBLIC KEY" {
+		return nil, nil, errors.New("failed to decode PEM block containing public key")
+	}
+	
+	pubInterface, err := x509.ParsePKIXPublicKey(pubBlock.Bytes)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	publicKey, ok := pubInterface.(*rsa.PublicKey)
+	if !ok {
+		return nil, nil, errors.New("not an RSA public key")
+	}
+
+	return privateKey, publicKey, nil
 }
 
 // GenerateAccessToken mints a short-lived access token signed with the RSA Private Key.

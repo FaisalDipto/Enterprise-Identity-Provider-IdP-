@@ -54,3 +54,77 @@ func RequireAuth(tm *auth.TokenManager) func(http.Handler) http.Handler {
 		})
 	}
 }
+
+// RequireRole is an RBAC middleware. It takes a list of allowed roles.
+// Note: This MUST be places AFTER RequireAuth in router chain.
+func RequireRole(allowedRoles ...string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+
+			// 1. Unzip the backpack (We assume RequireAuth already put it there)
+			rawData := r.Context().Value(UserContextKey)
+			if rawData == nil {
+				http.Error(w, "Unauthorized: No user context found", http.StatusUnauthorized)
+				return
+			}
+
+			// 2. Type assert to our specific CustomClaims struct
+			claims, ok := rawData.(*auth.CustomClaims)
+			if !ok {
+				http.Error(w, "Internal server error: Invalid claims", http.StatusInternalServerError)
+				return
+			}
+
+			// 3. Check if the user's role matches any of the allowed roles
+			hasPermission := false
+			for _, role := range allowedRoles {
+				if claims.Role == role {
+					hasPermission = true
+					break
+				}
+			}
+
+			// 4. The Decision Gate
+			if !hasPermission {
+				// We return 403 Forbidden (I know who you are, but you don't have permission)
+				// NOT 401 Unauthorized (I don't know who you are)
+				http.Error(w, "Forbidden: Insufficient permissions", http.StatusForbidden)
+				return
+			}
+
+			// 5. Success! Pass the request to the final handler
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// ProfileHandler handles GET /api/profile (Protected Route)
+func ProfileHandler(w http.ResponseWriter, r *http.Request) {
+
+	// 1. Unzip the backpack using our secure, custom type key
+	rawData := r.Context().Value(UserContextKey)
+
+	// 2. The Type Assertion: Force the generic data into our specific struct shape
+	claims, ok := rawData.(*auth.CustomClaims)
+	if !ok {
+		// If someone tempered with the context, or it's empty, kick them out
+		http.Error(w, "Server error: Invalid context data", http.StatusInternalServerError)
+		return
+	}
+
+	// 3. Success! We now have strongly-typed access to the JWT payload
+	w.Write([]byte("Welcome to your profile, User ID: " + claims.UserID))
+}
+
+// AdminDashBoardHandler handles GET /api/admin (protected)
+func AdminDashBoardHandler(w http.ResponseWriter, r *http.Request) {
+	rawData := r.Context().Value(UserContextKey)
+
+	claims, ok := rawData.(*auth.CustomClaims)
+	if !ok {
+		http.Error(w, "Server error: Invalid context data", http.StatusInternalServerError)
+		return
+	}
+
+	w.Write([]byte("Welcome ADMIN!!!, Your id: " + claims.UserID))
+}
