@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"time"
 
 	"Identity_Provider/internal/auth"
@@ -14,14 +15,16 @@ import (
 type AuthHandler struct {
 	repo repository.UserRepository
 	refreshTokenRepo repository.RefreshTokenRepository
+	revokedRepo repository.RevokedTokenRepository
 	tokenManager *auth.TokenManager
 }
 
 // NewAuthHandler is the constructor. Notice it asks for the Interface, not Postgres!
-func NewAuthHandler(repo repository.UserRepository, rtr repository.RefreshTokenRepository,tm *auth.TokenManager) *AuthHandler {
+func NewAuthHandler(repo repository.UserRepository, rtr repository.RefreshTokenRepository,rev repository.RevokedTokenRepository,tm *auth.TokenManager) *AuthHandler {
 	return &AuthHandler{
 		repo: repo,
 		refreshTokenRepo: rtr,
+		revokedRepo: rev,
 		tokenManager: tm,
 	}
 }
@@ -299,3 +302,38 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode(res)
 	}
+
+// Logout invalidates the current access token by throwing it on the Denylist.
+func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
+	// 1. Pull the token string out of the Authorization header
+	authHeader := r.Header.Get("Authorization")
+	tokenString := strings.TrimPrefix(authHeader, "Bearer ")
+
+	// 2.Extract the signature
+	signature, err := auth.ExtractSignature(tokenString)
+	if err != nil {
+		http.Error(w, "Invalid token format", http.StatusBadRequest)
+		return
+	}
+
+	// 3. Get the expiration time using your existing TokenManager
+	claims, err := h.tokenManager.VerifyToken(tokenString)
+	if err != nil {
+		http.Error(w, "Could not read token claims", http.StatusUnauthorized)
+		return
+	}
+
+	// Because just used jtw.RegisteredClaims, ExpiresAt is a struct.
+	// Just call .Time on it to get the standard Go time.Time object.
+	expiresAt := claims.ExpiresAt.Time
+
+	// 4. Throw it in the database vault!
+	err = h.revokedRepo.RevokeToken(r.Context(), signature, expiresAt)
+	if err != nil {
+		http.Error(w, "Failed to revoke token", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`{"message": "Successfully logged out. Token burned."}`))
+}

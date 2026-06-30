@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"Identity_Provider/internal/auth"
+	"Identity_Provider/internal/repository"
 	"context"
 	"net/http"
 	"strings"
@@ -14,7 +15,7 @@ const UserContextKey contextKey = "user_claims"
 
 // RequireAuth is the middleware function. It takes our tokenManager as a dependency
 // and returns a standard Go middleware signature: func(http.Handler) http.Handler
-func RequireAuth(tm *auth.TokenManager) func(http.Handler) http.Handler {
+func RequireAuth(tm *auth.TokenManager, revokedRepo repository.RevokedTokenRepository) func(http.Handler) http.Handler {
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -39,6 +40,30 @@ func RequireAuth(tm *auth.TokenManager) func(http.Handler) http.Handler {
 			if err != nil {
 				// If the token is expired, tampered with, or invalid, the bouncer stops them here.
 				http.Error(w, "Invalid or expired token", http.StatusUnauthorized)
+				return
+			}
+
+			// ---------------------------------------------------------
+			// 🔥 THE NEW KILL SWITCH (MODULE 5.1) 🔥
+			// ---------------------------------------------------------
+
+			// 3a. Extract the signature (using the helper we wrote earlier)
+			signature, err := auth.ExtractSignature(tokenString)
+			if err != nil {
+				http.Error(w, "Malformed token format", http.StatusUnauthorized)
+				return
+			}
+
+			// 3b. Check the Denylist in the database
+			isRevoked, err := revokedRepo.IsTokenRevoked(r.Context(), signature)
+			if err != nil {
+				http.Error(w, "Internal server error during security check", http.StatusInternalServerError)
+				return
+			}
+
+			// 3c. Drop the hammer if the token in banned
+			if isRevoked {
+				http.Error(w, "Token has been revoked. Please log in again.", http.StatusUnauthorized)
 				return
 			}
 

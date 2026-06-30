@@ -46,8 +46,12 @@ func main() {
 	db.SetConnMaxLifetime(15 * time.Minute)
 	
 	log.Println("✅ Database connection established successfully!")
+	// Initialize Repositories
 	userRepo := repository.NewPostgresUserRepository(db)
 	refreshRepo := repository.NewPostgresRefreshTokenRepository(db)
+
+	// Initialize the Denylist Repository
+	revokedRepo := repository.NewPostgresRevokedTokenRepository(db)
 
 	// 2. Initialize Cryptography (Phase 1)
 	// (In production, you load these from secure .pem files)
@@ -64,7 +68,7 @@ func main() {
 	tokenManager := auth.NewTokenManager(privateKey, publicKey, "Faisal-IdP")
 
 	// 3. Initialize Controllers (Phase 3)
-	authHandler := handlers.NewAuthHandler(userRepo, refreshRepo, tokenManager)
+	authHandler := handlers.NewAuthHandler(userRepo, refreshRepo, revokedRepo, tokenManager)
 
 	// 4. Initialize Router
 	mux := http.NewServeMux()
@@ -76,14 +80,22 @@ func main() {
 	mux.HandleFunc("/api/login", authHandler.Login)
 	mux.HandleFunc("/api/refresh", authHandler.Refresh)
 
-	// A route any logged-in user can access
-	profileRoute := http.HandlerFunc(handlers.ProfileHandler)
-	mux.Handle("/api/profile", handlers.RequireAuth(tokenManager)(profileRoute))
+	// ------------------------------------------------
+	// PROTECTED ROUTES (Wrapped in RequireAuth)
+	// ------------------------------------------------
 
-	// A route ONLY an Admin can access
+	// 1. Profile Route
+	profileRoute := http.HandlerFunc(handlers.ProfileHandler)
+	mux.Handle("/api/profile", handlers.RequireAuth(tokenManager, revokedRepo)(profileRoute))
+
+	// 2. Logout Route (The Kill switch)
+	logoutRoute := http.HandlerFunc(authHandler.Logout)
+	mux.Handle("/api/logout", handlers.RequireAuth(tokenManager, revokedRepo)(logoutRoute))
+
+	// 3. route ONLY an Admin can access
 	adminRoute := http.HandlerFunc(handlers.AdminDashBoardHandler)
 	// Notice the chain: RequireAuth -> RequireRole("admin") -> AdminHandler
-	mux.Handle("/api/admin", handlers.RequireAuth(tokenManager)(handlers.RequireRole("admin")(adminRoute),
+	mux.Handle("/api/admin", handlers.RequireAuth(tokenManager, revokedRepo)(handlers.RequireRole("admin")(adminRoute),
 	),
 )
 
