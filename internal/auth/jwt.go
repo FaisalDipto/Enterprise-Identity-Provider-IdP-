@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"time"
+	"strings"
 
 	"github.com/golang-jwt/jwt/v5"
 )
@@ -151,4 +152,13 @@ func (tm *TokenManager) VerifyToken(tokenStr string) (*CustomClaims, error) {
 	}
 
 	return nil, errors.New("Invalid token claims")
+}
+
+// ExtractSignature pulls the final cryptographic segment out of a standard JWT string.
+func ExtractSignature(tokenStr string) (string, error) {
+	parts := strings.Split(tokenStr, ".")
+	if len(parts) != 3 {
+		return "", errors.New("invalid token format: must contain header, payload and signature")
+	}
+	return parts[2], nil
 }
