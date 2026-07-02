@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -162,11 +163,17 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	// ================================
 
 	// 6. Generate the Refresh Token Pair
-	rawToken, dbHash, err := auth.GenerateRefreshToken()
+	rawToken, _, err := auth.GenerateRefreshToken()
 	if err != nil {
 		http.Error(w, "Failed to generate session", http.StatusInternalServerError)
 		return
 	}
+
+	dbHash := auth.HashToken(rawToken)
+
+	log.Printf("=== LOGIN WIRETAP ===")
+	log.Printf("Raw Cookie Value Issued: %s", rawToken)
+	log.Printf("Hash Saved to Database: %s", dbHash)
 
 	// 7. Store the Hash in PostgreSQL (Expires in 7 days)
 	expiresAt := time.Now().Add(7 * 24 * time.Hour)
@@ -225,6 +232,9 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 		// 3. Hash the raw token to interact with the Database
 		tokenHash := auth.HashToken(rawToken)
+		log.Printf("=== REFRESH WIRETAP ===")
+		log.Printf("Raw Cookie Received: %s", rawToken)
+		log.Printf("Hash Generated for DB Lookup: %s", tokenHash)
 
 		// 4. Verify the token exists in the database
 		storedToken, err := h.refreshTokenRepo.GetTokenByHash(r.Context(), tokenHash)
@@ -267,11 +277,13 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// 9. Mint the new 7-Day Refresh Token Pair
-		newRawToken, newDbHash, err := auth.GenerateRefreshToken()
+		newRawToken, _, err := auth.GenerateRefreshToken()
 		if err != nil {
 			http.Error(w, "Failed to generate session", http.StatusInternalServerError)
 			return
 		}
+
+		newDbHash := auth.HashToken(newRawToken)
 
 		// 10. Store the new Hash in PostgreSQL
 		expiresAt := time.Now().Add(7 * 24 * time.Hour)
