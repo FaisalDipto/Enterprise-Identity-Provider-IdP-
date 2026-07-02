@@ -337,3 +337,4 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(`{"message": "Successfully logged out. Token burned."}`))
 }
+
