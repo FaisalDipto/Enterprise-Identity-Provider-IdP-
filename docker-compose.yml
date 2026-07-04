@@ -1,0 +1,64 @@
+version: '3.8'
+
+services:
+  # ==========================================
+  # 1. THE VAULT (PostgreSQL)
+  # ==========================================
+  postgres-db:
+    image: postgres:15-alpine
+    container_name: idp_postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password123 # Make sure this matches your original setup!
+      POSTGRES_DB: idp_database # Update to match your actual DB name
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - enterprise_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d idp_database"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ==========================================
+  # 2. THE IDENTITY PROVIDER (Port 8080)
+  # ==========================================
+  idp-service:
+    build:
+      context: ./idp
+    container_name: idp_core
+    ports:
+      - "8080:8080"
+    environment:
+      # Notice the host changed from 'localhost' to 'postgres-db' !
+      - CONNECTION_STRING_DB=postgres://postgres:password123@postgres-db:5432/idp_database?sslmode=disable
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+    networks:
+      - enterprise_net
+
+  # ==========================================
+  # 3. THE DISPATCH SERVICE (Port 8081)
+  # ==========================================
+  dispatch-service:
+    build:
+      context: ./dispatch
+    container_name: dispatch_api
+    ports:
+      - "8081:8081"
+    networks:
+      - enterprise_net
+
+# ---------------------------------------------------------
+# PERSISTENCE & NETWORKING
+# ---------------------------------------------------------
+volumes:
+  pgdata: # This ensures your database survives container restarts
+
+networks:
+  enterprise_net:
+    driver: bridge
