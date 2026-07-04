@@ -15,6 +15,7 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
     networks:
       - enterprise_net
     healthcheck:
@@ -31,7 +32,7 @@ services:
       context: ./idp
     container_name: idp_core
     ports:
-      - "8080:8080"
+      - "8085:8080"
     environment:
       # Notice the host changed from 'localhost' to 'postgres-db' !
       - CONNECTION_STRING_DB=postgres://postgres:password123@postgres-db:5432/idp_database?sslmode=disable

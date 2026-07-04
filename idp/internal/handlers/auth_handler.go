@@ -53,6 +53,7 @@ type RegisterResponse struct {
 
 // Register handles POST /api/register
 func (h *AuthHandler) Register (w http.ResponseWriter, r *http.Request) {
+	log.Println("🚀 DOCKER CONTAINER REGISTER ROUTE HIT!")
 	// 1. Enforce HTTP Method
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -74,6 +75,7 @@ func (h *AuthHandler) Register (w http.ResponseWriter, r *http.Request) {
 	// 3. Hash the password using our Phase 1 Cryptography Engine
 	hashedPassword, err := auth.HashPassword(req.Password)
 	if err != nil {
+		log.Printf("CRITICAL DB ERROR DURING REGISTER: %v", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
@@ -89,7 +91,7 @@ func (h *AuthHandler) Register (w http.ResponseWriter, r *http.Request) {
 	err = h.repo.CreateUser(r.Context(), newUser)
 	if err != nil {
 		// If the database throws an error (e.g., Email already exists), we return a 409 Conflict
-		http.Error(w, "Email already in use or database error", http.StatusConflict)
+		http.Error(w, "Error from inside Docker!", http.StatusConflict)
 		return
 	}
 
@@ -165,6 +167,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	// 6. Generate the Refresh Token Pair
 	rawToken, _, err := auth.GenerateRefreshToken()
 	if err != nil {
+		log.Printf("CRITICAL LOGIN ERROR: %v", err)
 		http.Error(w, "Failed to generate session", http.StatusInternalServerError)
 		return
 	}
@@ -185,6 +188,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	err = h.refreshTokenRepo.CreateToken(r.Context(), newSession)
 	if err != nil {
+		log.Printf("CRITICAL DB INSERT ERROR: %v", err)
 		http.Error(w, "Failed to create session", http.StatusInternalServerError)
 		return
 	}
