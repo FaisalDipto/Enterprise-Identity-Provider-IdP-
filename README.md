@@ -6,6 +6,40 @@ A zero-trust, decoupled microservice architecture built in Go. This repository c
 
 This monorepo utilizes a decoupled architecture where authentication is strictly isolated from business logic. The IDP acts as the central cryptographic authority, while downstream microservices (like the Dispatch API) operate on a zero-trust model, verifying asymmetric signatures mathematically without requiring database round-trips.
 
+```text
+THE ENTERPRISE ZERO-TRUST ARCHITECTURE
+                                       
++-------------------+                                +-------------------------------------------------+
+|                   |       (1) POST /login          |  DOCKER BRIDGE NETWORK (enterprise_net)         |
+|                   |       Email & Password         |                                                 |
+|                   | -----------------------------> |  +--------------------+                         |
+|                   |                                |  |                    |                         |
+|   CLIENT          | <----------------------------- |  |   IDP Core         |                         |
+|  (Postman / Web)  |       (3) 200 OK               |  |   (Go API - :8085) |                         |
+|                   |       Returns RSA JWT &        |  |                    |                         |
+|                   |       Sets Refresh Cookie      |  +--------------------+                         |
+|                   |                                |    |                ^                           |
+|                   |                                |    | (2) Hash Pass  | (Verify)                  |
+|                   |                                |    v     & Store    |                           |
+|                   |                                |  +--------------------+                         |
+|                   |                                |  |                    |                         |
+|                   |                                |  |   The Vault        |                         |
+|                   |                                |  |   (PostgreSQL 15)  |                         |
+|                   |                                |  |   (Port :5432)     |                         |
+|                   |                                |  +--------------------+                         |
+|                   |                                |                                                 |
+|                   |==================================================================================|
+|                   |                                |                                                 |
+|                   |       (4) GET /classified      |  +--------------------+                         |
+|                   |       Header: Bearer <JWT>     |  |                    |                         |
+|                   | -----------------------------> |  |   Dispatch API     |--+ (5) Verify RSA       |
+|                   |                                |  |   (Go API - :8081) |  | Signature Locally    |
+|                   | <----------------------------- |  |                    |<-+ (No DB Call!)        |
+|                   |       (6) 200 OK               |  +--------------------+                         |
+|                   |       Top Secret Payload       |                                                 |
++-------------------+                                +-------------------------------------------------+
+```
+
 ### Core Components
 * **IDP Core (`/idp`):** Handles user registration, cryptographic password hashing, and the minting of RSA-256 signed JSON Web Tokens (JWTs). Manages session state via PostgreSQL.
 * **Dispatch Service (`/dispatch`):** A downstream microservice simulating a classified vault. It intercepts requests, extracts the JWT, and verifies the RSA signature using only the IDP's Public Key.
