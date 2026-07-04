@@ -40,19 +40,22 @@ This monorepo utilizes a decoupled architecture where authentication is strictly
 ### Quickstart
 
 1. **Clone the repository:**
-    
+    ```bash
     git clone <your-repository-url>
     cd enterprise-idp
+    ```
 
 2. **Boot the fleet:**
     The entire network, including the database and Go binaries, will compile and boot automatically.
-    
+    ```bash
     docker compose up --build -d
+    ```
 
 3. **Verify the network:**
     Check the logs to ensure the database schema was built and the Go servers connected successfully.
-    
+    ```bash
     docker logs idp_core
+    ```
 
 ## 🔌 API Endpoints
 
