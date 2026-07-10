@@ -107,5 +107,5 @@ THE ENTERPRISE ZERO-TRUST ARCHITECTURE
 ## 🛡️ Security Posture
 
 * **Asymmetric Key Verification:** Microservices do not share a database or symmetrical secret keys. Downstream services verify tokens using only a distributed Public Key.
-* **Multi-Stage Docker Builds:** The Go binaries are compiled in a heavy builder image, but deployed in a pristine, stripped-down `alpine:latest` vault, neutralizing builder-stage CVEs and reducing the attack surface.
+* **Multi-Stage Docker Builds:** The Go binaries are compiled in a heavy builder image, but deployed in a pristine, stripped down `alpine:latest` vault, neutralizing builder-stage CVEs and reducing the attack surface.
 * **Stateless Validation:** The Dispatch service achieves single-digit millisecond latency by mathematically verifying tokens locally.
