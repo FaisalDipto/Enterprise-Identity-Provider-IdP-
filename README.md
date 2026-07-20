@@ -86,7 +86,7 @@ THE ENTERPRISE ZERO-TRUST ARCHITECTURE
     ```
 
 3. **Verify the network:**
-    Check the logs to ensure the database schema was built and the Go servers connected successfully.
+    Check the logs to ensure the database schema was built and  the Go servers connected successfully.
     ```bash
     docker logs idp_core
     ```
